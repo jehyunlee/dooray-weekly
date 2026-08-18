@@ -10,6 +10,7 @@ use_when:
   - 주간보고 써줘
   - 주간보고 정리해줘
   - 주간보고 읽어줘
+  - 이번주 두레이 주간보고 정리해줘
   - 주간보고 보고서 한글파일 hwpx 생성
   - 주간보고 두레이 댓글 첨부 업로드
   - dooray weekly report write generate hwpx attach
@@ -23,6 +24,8 @@ Dooray(정부용 테넌트 `*.gov-dooray.com` 포함)의 **주간보고** 프로
 ## 전제
 
 - `DOORAY_API_KEY` 환경변수에 개인 API 토큰이 있어야 한다. (Dooray → 설정 → API)
+  셸 `export` 대신 스킬 루트의 `.env` 파일에 적어도 된다 — `.env.sample` 참고. (현재 디렉토리의 `.env`는 읽지 않는다)
+  스크립트가 시작할 때 자동으로 읽으며, 이미 export된 값이 우선한다.
 - API 호스트는 `api.gov-dooray.com` (정부용 테넌트). 일반 테넌트는 `DOORAY_API_HOST=api.dooray.com`.
 - 인증 헤더: `Authorization: dooray-api <KEY>`
 - HWPX 생성에는 `lxml`이 필요하고, 후처리에 [hwpx-skill](https://github.com/jkf87/hwpx-skill)을 쓴다.
@@ -49,6 +52,29 @@ python3 $S/dooray_weekly.py projects --query 주간       # 프로젝트 탐색
 ```
 
 옵션: `--project`(code 또는 id, 기본 `주간보고`, env `DOORAY_WEEKLY_PROJECT`), `--format`, `--no-comments`.
+
+`list`는 Dooray의 기간 필터를 그대로 받는다: `--created thisweek|today|prev-10d|next-3d|A~B`, `--updated …`, `--order -createdAt`.
+`show`는 게시글 대신 **기간**(`thisweek`, `이번주`, `prev-10d` …)을 받을 수 있다.
+그 기간(생성일 기준)에 게시글이 정확히 1개면 그것을 쓰고, 0개면 `prev-10d`로 한 번 더 찾는다.
+그래도 0개이거나 2개 이상이면 후보 목록을 stderr에 찍고 **종료코드 3**으로 끝난다 — 이때는 사람이 골라야 한다.
+
+### "이번주 두레이 주간보고 정리해줘" 워크플로우
+
+매주 주간회의용으로 반복되는 요청이다. 다음 순서로 처리한다.
+
+0. 프로젝트 확인. `list`가 `'주간보고' 프로젝트를 찾을 수 없다`로 실패하면(rc=2) 임의로 추측하지 말고
+   **`AskUserQuestion`으로 묻는다** — 선택지: `dooray_weekly.py projects` 결과 중 이름에 "주간/보고"가 든 것,
+   그리고 "업무 URL 또는 프로젝트 id를 직접 입력". 확정되면 그 id를 `--project`로 쓰고,
+   사용자가 동의하면 `.env`의 `DOORAY_WEEKLY_PROJECT`에 저장해 다음부터 묻지 않는다.
+1. `python3 $S/dooray_weekly.py list --created thisweek` 로 이번 주 생성된 업무를 본다.
+   - 비어 있으면 `--created prev-10d` 로 넓힌다. (지난주 말에 올라온 주간보고일 수 있다)
+2. 후보가 **1개**면 그 id로 진행한다. `weekly_hwpx.py`에는 항상 확정된 id/URL을 넘긴다.
+3. 후보가 **0개 또는 2개 이상**이면 임의로 고르지 말고 **`AskUserQuestion`으로 확인**한다.
+   - 선택지에는 `#업무번호 · 제목 · 생성일`을 그대로 보여 준다. 예: `#12 · 8월 3주차 주간보고 · 2026-08-17`
+   - 후보가 없으면 "지난주 게시글을 쓸지 / 업무 URL을 직접 줄지"를 묻는다.
+4. 확정된 업무로 `show`(마크다운 정리)를 하고, "만들어줘/한글파일"이면 `weekly_hwpx.py --post <id>`
+   (첨부가 기본 동작). "정리만/올리지 말고"처럼 파일만 원하면 `--no-attach`.
+5. 답변에는 어느 업무(#번호·제목·URL)를 썼는지 한 줄로 밝힌다.
 
 ### 사용하는 API 엔드포인트
 
@@ -163,6 +189,7 @@ python3 $S/weekly_hwpx.py --post <URL> --comment "초안 첨부합니다."
 
 ## 작업 지침
 
+- "이번주 주간보고 정리해줘" → 위 워크플로우: `list --created thisweek` → 1개면 진행, 아니면 `AskUserQuestion`
 - "주간보고 읽어줘/정리해줘" → `dooray_weekly.py show`
 - "주간보고 문서/한글파일 만들어줘" → `weekly_hwpx.py`
 - "주간보고에 올려줘/첨부해줘" → `weekly_hwpx.py` (첨부가 기본)
