@@ -1,7 +1,18 @@
 ---
 name: dooray-weekly
-description: Dooray 주간보고를 API로 읽어 마크다운·AIX전략실 주요 업무 보고 HWPX로 변환하고, 원본 업무에 첨부 댓글까지 등록
+description: 두레이(Dooray) 주간보고를 읽어 정리하고, 주요 업무 보고 HWPX 문서를 작성해 원본 업무에 첨부 댓글로 등록한다. 주간보고 작성·정리·한글파일(hwpx) 생성·업로드 요청에 쓴다.
 argument-hint: "[read|hwpx] [latest | <post-id> | <Dooray task URL>] [--attach]"
+use_when:
+  - 두레이 주간보고 작성
+  - 두레이 주간보고 작성해줘
+  - 주간보고 작성해줘
+  - 주간보고 만들어줘
+  - 주간보고 써줘
+  - 주간보고 정리해줘
+  - 주간보고 읽어줘
+  - 주간보고 보고서 한글파일 hwpx 생성
+  - 주간보고 두레이 댓글 첨부 업로드
+  - dooray weekly report write generate hwpx attach
 ---
 
 # Dooray 주간보고 읽기 · HWPX 보고서 생성

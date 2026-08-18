@@ -114,6 +114,33 @@ $EDITOR parsed.json                                  # 손으로 다듬고
 python3 $S/weekly_hwpx.py --from-json parsed.json --attach
 ```
 
+## 스킬 발동
+
+`SKILL.md` 프론트매터의 `description` 과 `use_when` 이 에이전트의 스킬 탐색에 걸린다.
+"두레이 주간보고 작성해줘", "주간보고 만들어줘", "주간보고 읽어줘" 같은 한국어 요청이
+모두 매칭되도록 트리거 문구를 나열해 두었다.
+
+```yaml
+use_when:
+  - 두레이 주간보고 작성해줘
+  - 주간보고 만들어줘
+  - 주간보고 읽어줘
+  - dooray weekly report write generate hwpx attach
+```
+
+탐색 매칭은 질의의 **모든 단어**가 `name + description + use_when` 안에 있어야 성립하므로,
+쓰는 말투를 그대로 한 줄씩 추가하면 된다.
+
+에이전트가 탐색 자체를 건너뛰는 것이 문제라면, 항상 로드되는 컨텍스트 파일(`AGENTS.md`, `CLAUDE.md`)에
+라우팅 규칙을 적어 두는 쪽이 확실하다.
+
+```markdown
+### 두레이 주간보고
+- "주간보고 작성해줘/만들어줘" → `dooray-weekly` 스킬로 HWPX 생성
+- "주간보고 읽어줘" → 본문 조회
+- "주간보고 올려줘" → 생성 후 첨부 댓글 등록
+```
+
 ## 문서 구조
 
 ```
