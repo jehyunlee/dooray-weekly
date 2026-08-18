@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """Dooray 주간보고 조회 CLI.
 
-환경변수:
+환경변수 (셸 환경변수 > .env 파일 순으로 읽는다):
   DOORAY_API_KEY   (필수) Dooray 개인 API 토큰
   DOORAY_API_HOST  (선택) 기본 api.gov-dooray.com
-  DOORAY_WEEKLY_PROJECT (선택) 기본 주간보고
+  DOORAY_FILE_HOST (선택) 기본 file-api.gov-dooray.com
+  DOORAY_WEEKLY_PROJECT (선택) 프로젝트 code 또는 id, 기본 주간보고
+
+.env 탐색 순서: $DOORAY_ENV_FILE → 스킬 루트/.env (첫 번째로 존재하는 파일 하나)
 
 사용법:
   dooray_weekly.py projects [--query 주간보고]
-  dooray_weekly.py list [--project 주간보고] [--limit 20]
-  dooray_weekly.py show [<post-id | URL | latest | #번호>] [--project 주간보고]
+  dooray_weekly.py list [--project 주간보고] [--limit 20] [--created thisweek|prev-10d] [--order -createdAt]
+  dooray_weekly.py show [<post-id | URL | latest | #번호 | thisweek | prev-10d>] [--project 주간보고]
                         [--format md|raw|json]
+
+종료코드: 0 성공 / 2 오류 / 3 기간 조회 결과가 0개 또는 여러 개라 사람이 골라야 함(후보 목록 stderr)
 """
 
 from __future__ import annotations
@@ -25,6 +30,39 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
+from pathlib import Path
+
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+
+
+def load_env_file() -> None:
+    """`.env`를 읽어 os.environ에 없는 키만 채운다. 외부 의존성 없이 KEY=VALUE 형식만 지원.
+
+    탐색 순서: $DOORAY_ENV_FILE → 스킬 루트/.env. 처음 발견한 파일 하나만 읽는다.
+    이미 export된 환경변수가 우선한다.
+    현재 디렉토리의 .env 는 일부러 읽지 않는다 — 낯선 디렉토리의 .env 가 DOORAY_API_HOST 를 바꿔치기해
+    API 키가 실린 요청을 다른 호스트로 보내게 만들 수 있기 때문이다.
+    """
+    candidates = [Path(p) for p in (os.environ.get("DOORAY_ENV_FILE"),) if p]
+    candidates.append(SKILL_ROOT / ".env")
+    for env_path in candidates:
+        if not env_path.is_file():
+            continue
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = (part.strip() for part in line.split("=", 1))
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+                value = value[1:-1]
+            else:
+                value = value.split(" #", 1)[0].strip()
+            if key and value:
+                os.environ.setdefault(key, os.path.expanduser(value))
+        return
+
+
+load_env_file()
 
 DEFAULT_HOST = os.environ.get("DOORAY_API_HOST", "api.gov-dooray.com")
 FILE_HOST = os.environ.get("DOORAY_FILE_HOST", DEFAULT_HOST.replace("api.", "file-api.", 1))
@@ -122,13 +160,58 @@ def resolve_project_id(name_or_id: str) -> tuple[str, str]:
     return picked["id"], picked["code"]
 
 
-def list_posts(project_id: str, limit: int = 20) -> list[dict]:
+def list_posts(
+    project_id: str,
+    limit: int = 20,
+    *,
+    created_at: str | None = None,
+    updated_at: str | None = None,
+    order: str = "-postUpdatedAt",
+) -> list[dict]:
+    """게시글 목록. 기간 필터는 Dooray DATE_PATTERN(today, thisweek, prev-Nd, next-Nd, A~B)을 그대로 넘긴다."""
     return api(
         f"/project/v1/projects/{project_id}/posts",
         size=limit,
-        order="-postUpdatedAt",
+        order=order,
+        createdAt=created_at,
+        updatedAt=updated_at,
         postWorkflowClasses="registered,working,closed",
     )["result"]
+
+
+DATE_PATTERN_RE = re.compile(r"^(today|thisweek|prev-\d+d|next-\d+d|\d{4}-\d{2}-\d{2}T[^~]+~.+)$")
+PERIOD_ALIASES = {"이번주": "thisweek"}
+FALLBACK_PERIOD = "prev-10d"
+
+
+def period_pattern(text: str | None) -> str | None:
+    """한국어 별칭을 Dooray DATE_PATTERN으로 바꾼다. 기간이 아니면 None."""
+    if not text:
+        return None
+    text = PERIOD_ALIASES.get(text, text)
+    return text if DATE_PATTERN_RE.match(text) else None
+
+
+def find_posts_in_period(project_id: str, period: str) -> tuple[str, list[dict]]:
+    """기간(생성일 기준)으로 게시글을 찾는다. 비어 있으면 FALLBACK_PERIOD로 한 번 더 찾는다.
+
+    반환: (실제 사용한 기간 패턴, 게시글 목록 — 생성일 역순)
+    """
+    posts = list_posts(project_id, limit=50, created_at=period, order="-createdAt")
+    if not posts and period != FALLBACK_PERIOD:
+        return FALLBACK_PERIOD, list_posts(project_id, limit=50, created_at=FALLBACK_PERIOD, order="-createdAt")
+    return period, posts
+
+
+class AmbiguousPost(DoorayError):
+    """기간 조회 결과가 0개 또는 2개 이상이라 사람이 골라야 하는 상황."""
+
+    def __init__(self, period: str, posts: list[dict]) -> None:
+        self.period, self.posts = period, posts
+        lines = [f"'{period}' 기간에 해당하는 게시글이 {len(posts)}개다. 하나를 지정해야 한다."]
+        for post in posts:
+            lines.append(f"  {post['id']}\t#{post.get('taskNumber')}\t{post.get('subject')}\t{(post.get('createdAt') or '')[:10]}")
+        super().__init__("\n".join(lines))
 
 
 def get_post(project_id: str, post_id: str) -> dict:
@@ -148,6 +231,11 @@ def resolve_post_id(project_id: str, target: str) -> str:
         return match.group(1)
     if target.isdigit() and len(target) > 6:
         return target
+    if period := period_pattern(target):
+        period, found = find_posts_in_period(project_id, period)
+        if len(found) == 1:
+            return found[0]["id"]
+        raise AmbiguousPost(period, found)
     posts = list_posts(project_id, limit=100)
     if not posts:
         raise DoorayError("게시글이 없다.")
@@ -358,9 +446,13 @@ def main(argv: list[str] | None = None) -> int:
     p_list = sub.add_parser("list", help="주간보고 게시글 목록")
     p_list.add_argument("--project", default=DEFAULT_PROJECT)
     p_list.add_argument("--limit", type=int, default=20)
+    p_list.add_argument("--created", default=None, metavar="DATE_PATTERN", help="today | thisweek | prev-10d | A~B")
+    p_list.add_argument("--updated", default=None, metavar="DATE_PATTERN")
+    p_list.add_argument("--order", default=None, help="-createdAt | -postUpdatedAt | postDueAt")
 
     p_show = sub.add_parser("show", help="주간보고 본문 조회")
-    p_show.add_argument("target", nargs="?", default="latest", help="post id, URL, latest, #번호")
+    p_show.add_argument("target", nargs="?", default="latest",
+                        help="post id, URL, latest, #번호, thisweek/이번주/prev-10d 같은 기간")
     p_show.add_argument("--project", default=DEFAULT_PROJECT)
     p_show.add_argument("--format", choices=("md", "raw", "json"), default="md")
     p_show.add_argument("--no-comments", action="store_true")
@@ -379,7 +471,14 @@ def main(argv: list[str] | None = None) -> int:
         project_id, code = resolve_project_id(args.project)
 
         if args.cmd == "list":
-            for post in list_posts(project_id, args.limit):
+            order = args.order or ("-createdAt" if (args.created or args.updated) else "-postUpdatedAt")
+            posts = list_posts(
+                project_id, args.limit,
+                created_at=period_pattern(args.created) or args.created,
+                updated_at=period_pattern(args.updated) or args.updated,
+                order=order,
+            )
+            for post in posts:
                 print(f"{post['id']}\t{post['taskNumber']}\t{post['subject']}\t{post['createdAt']}")
             return 0
 
@@ -390,6 +489,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"<!-- project: {code} ({project_id}) -->")
         print(format_post(post, comments, args.format))
         return 0
+    except AmbiguousPost as exc:
+        print(f"ambiguous: {exc}", file=sys.stderr)
+        return 3
     except DoorayError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
