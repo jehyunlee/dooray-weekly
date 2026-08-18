@@ -1,7 +1,7 @@
 ---
 name: dooray-weekly
 description: 두레이(Dooray) 주간보고를 읽어 정리하고, 주요 업무 보고 HWPX 문서를 작성해 원본 업무에 첨부 댓글로 등록한다. 주간보고 작성·정리·한글파일(hwpx) 생성·업로드 요청에 쓴다.
-argument-hint: "[read|hwpx] [latest | <post-id> | <Dooray task URL>] [--attach]"
+argument-hint: "[read|hwpx] [latest | <post-id> | <Dooray task URL>] [--no-attach]"
 use_when:
   - 두레이 주간보고 작성
   - 두레이 주간보고 작성해줘
@@ -85,8 +85,10 @@ Dooray 본문은 `mimeType: text/x-markdown`이지만 표는 raw `<table><tr><td
 서식 hwpx의 문단·표 노드를 그대로 **복제**하고 텍스트만 교체한다. XML을 새로 쓰지 않으므로
 글꼴·표 테두리·색 배너가 100% 보존된다.
 
+**생성 후 원본 업무에 첨부 댓글을 등록하는 것이 기본 동작이다.** 파일만 필요하면 `--no-attach`를 준다.
+
 ```bash
-# 최신 주간보고 → 260818_AIX전략실 주요 업무 보고.hwpx
+# 최신 주간보고 → hwpx 생성 + 원본 업무에 첨부 댓글 등록
 python3 $S/weekly_hwpx.py
 
 # 특정 게시글 / 출력 경로 / 서식 지정
@@ -99,8 +101,11 @@ python3 $S/weekly_hwpx.py --from-json parsed.json
 # 특정 섹션 제외 / 빈 항목 유지
 python3 $S/weekly_hwpx.py --exclude-section 기타 --keep-empty
 
-# 생성 + 원본 업무에 hwpx 첨부 댓글 등록 (URL in → hwpx out → Dooray 댓글)
-python3 $S/weekly_hwpx.py --post <URL> --attach --comment "초안 첨부합니다."
+# 첨부 없이 파일만 생성
+python3 $S/weekly_hwpx.py --post <URL> --no-attach
+
+# 댓글 본문 지정
+python3 $S/weekly_hwpx.py --post <URL> --comment "초안 첨부합니다."
 ```
 
 서식 탐색 순서: `--template` → `$WEEKLY_HWPX_TEMPLATE` → `./template/*.hwpx` → `assets/weekly-template.hwpx`.
@@ -140,11 +145,17 @@ python3 $S/weekly_hwpx.py --post <URL> --attach --comment "초안 첨부합니�
 `validate.py`를 차례로 실행한다(`--no-postprocess`로 생략). `VALID` + 구조 검사 통과를 확인한다.
 `body_paragraph_without_visible_indent` 경고는 원본 서식에서도 동일하게 나오는 휴리스틱 경고다.
 
-## 3. Dooray 업로드 — `--attach`
+## 3. Dooray 업로드 (기본 동작)
 
-`--attach`를 주면 생성한 hwpx를 원본 업무에 업로드하고, 그 파일을 첨부한 댓글을 등록한다.
+생성한 hwpx를 원본 업무에 업로드하고, 그 파일을 첨부한 댓글을 등록한다. **기본으로 켜져 있다.**
+파일만 만들고 올리지 않으려면 `--no-attach`.
+
 `--comment`로 본문을 지정하지 않으면 `본문 기준으로 자동 생성한 「{제목}」 초안을 첨부합니다.`가 들어간다.
-`--from-json`으로 생성할 때도 JSON의 `source.projectId` / `source.id`가 있으면 첨부된다.
+`--from-json`으로 생성할 때는 JSON의 `source.projectId` / `source.id`가 있어야 첨부된다.
+없으면 경고만 남기고 파일 생성까지만 끝내되, `--attach`를 명시했다면 오류로 끝난다.
+
+같은 주 보고서를 다시 올릴 때는 이전 댓글·첨부를 지우고 새로 등록한다. 그대로 두면 같은 업무에
+초안이 여러 개 쌓인다.
 
 파이썬 API는 `dooray_weekly.upload_file(project_id, post_id, path) -> fileId`와
 `dooray_weekly.create_comment(project_id, post_id, content, file_ids) -> logId`다.
@@ -154,7 +165,7 @@ python3 $S/weekly_hwpx.py --post <URL> --attach --comment "초안 첨부합니�
 
 - "주간보고 읽어줘/정리해줘" → `dooray_weekly.py show`
 - "주간보고 문서/한글파일 만들어줘" → `weekly_hwpx.py`
-- "주간보고에 올려줘/첨부해줘" → `weekly_hwpx.py --attach`
+- "주간보고에 올려줘/첨부해줘" → `weekly_hwpx.py` (첨부가 기본)
 - 내용을 손봐야 하면 `--dump-json`으로 뽑아 수정한 뒤 `--from-json`으로 다시 생성한다.
-- 조회는 자유롭게 하되, **쓰기(`--attach`, 댓글·첨부 등록·삭제)는 사용자가 명시적으로 요청했을 때만** 실행한다.
-- 업무 본문 자체를 수정하는 API는 이 스킬에서 호출하지 않는다.
+- 올리지 말라고 하면 `--no-attach`. 업무 본문 수정 API는 이 스킬에서 호출하지 않는다.
+- 이전 초안을 교체할 때만 `DELETE .../logs/{logId}` · `DELETE .../posts/{postId}/files/{fileId}`를 쓴다.

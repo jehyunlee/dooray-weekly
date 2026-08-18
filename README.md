@@ -26,7 +26,7 @@ Dooray 업무 URL  →  REST API 조회  →  본문 표 파싱 + 서식 노드 
 | 구조 파싱 | 본문 표를 `섹션 → 업무 → 세부업무` 트리로 분해 (`..` 연속행 승계 포함) |
 | HWPX 생성 | 기준 서식의 노드를 복제해 보고서 생성, 표 행 높이 재계산 |
 | 검수 | `fix_namespaces` → `finalize_hwpx` → `validate` 자동 실행 |
-| 업로드 | 생성물을 원본 업무에 업로드하고 첨부 댓글 등록 |
+| 업로드 | 생성물을 원본 업무에 업로드하고 첨부 댓글 등록 (기본 동작) |
 | 중간 개입 | `--dump-json`으로 뽑아 고친 뒤 `--from-json`으로 재생성 |
 
 ## 필요사항
@@ -88,8 +88,11 @@ python3 $S/dooray_weekly.py projects --query 주간   # 프로젝트 탐색
 
 ### HWPX 생성
 
+**생성한 hwpx를 원본 업무에 첨부 댓글로 등록하는 것이 기본 동작이다.** 파일만 필요하면 `--no-attach`.
+
 ```bash
-python3 $S/weekly_hwpx.py                                       # 최신 → 260818_○○실 주요 업무 보고.hwpx
+python3 $S/weekly_hwpx.py                                       # 최신 → 생성 + 첨부
+python3 $S/weekly_hwpx.py --post <URL> --no-attach               # 파일만
 python3 $S/weekly_hwpx.py --post <URL> --output 보고.hwpx
 python3 $S/weekly_hwpx.py --template 우리서식.hwpx
 python3 $S/weekly_hwpx.py --exclude-section 기타 --keep-empty
@@ -100,10 +103,21 @@ python3 $S/weekly_hwpx.py --title "○○실 주요 업무 보고" --org ○○�
 기준 서식은 `--template` → `$WEEKLY_HWPX_TEMPLATE` → `./template/*.hwpx` → `assets/weekly-template.hwpx`
 순으로 찾는다.
 
-### 생성 + Dooray 첨부
+### Dooray 첨부
+
+기본으로 켜져 있다. 댓글 본문만 바꾸려면 `--comment`.
 
 ```bash
-python3 $S/weekly_hwpx.py --post <URL> --attach --comment "초안 첨부합니다."
+python3 $S/weekly_hwpx.py --post <URL> --comment "초안 첨부합니다."
+```
+
+같은 주 보고서를 다시 올릴 때는 이전 댓글·첨부를 지우고 새로 등록한다. 그대로 두면 초안이 쌓인다.
+
+```bash
+curl -X DELETE -H "Authorization: dooray-api $DOORAY_API_KEY" \
+  "https://api.gov-dooray.com/project/v1/projects/{p}/posts/{t}/logs/{logId}"
+curl -X DELETE -H "Authorization: dooray-api $DOORAY_API_KEY" \
+  "https://api.gov-dooray.com/project/v1/projects/{p}/posts/{t}/files/{fileId}"
 ```
 
 ### 내용 검토 후 재생성
@@ -111,7 +125,7 @@ python3 $S/weekly_hwpx.py --post <URL> --attach --comment "초안 첨부합니�
 ```bash
 python3 $S/weekly_hwpx.py --dump-json parsed.json   # 구조를 JSON으로
 $EDITOR parsed.json                                  # 손으로 다듬고
-python3 $S/weekly_hwpx.py --from-json parsed.json --attach
+python3 $S/weekly_hwpx.py --from-json parsed.json
 ```
 
 ## 스킬 발동
@@ -204,7 +218,8 @@ use_when:
 
 ## 안전
 
-- 쓰기는 `--attach` 를 명시했을 때만 일어난다. 기본은 조회 전용이다.
+- `weekly_hwpx.py` 는 기본으로 첨부까지 한다. 올리지 않으려면 `--no-attach`.
+- `dooray_weekly.py` 는 조회 전용이다.
 - 업무 본문 자체를 수정하는 API는 호출하지 않는다.
 - 잘못 올렸으면 `DELETE .../logs/{logId}` 와 `DELETE .../posts/{postId}/files/{fileId}` 로 되돌린다.
 - 생성물의 `Preview/PrvImage.png` 는 흰 이미지로 덮어쓴다. 기준 서식의 썸네일이 남으면 원본 내용이

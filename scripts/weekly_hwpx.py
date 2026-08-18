@@ -16,7 +16,7 @@
                  [--post latest|<id>|<URL>] [--project 주간보고]
                  [--from-json parsed.json] [--dump-json parsed.json]
                  [--title ...] [--org AIX전략실] [--date 2026-08-18]
-                 [--exclude-section 기타] [--keep-empty] [--attach]
+                 [--exclude-section 기타] [--keep-empty] [--no-attach]
 """
 
 from __future__ import annotations
@@ -469,10 +469,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--date", default=None, help="보고일 (기본: 게시글 제목의 날짜)")
     ap.add_argument("--exclude-section", action="append", default=[], help="제외할 섹션 키워드")
     ap.add_argument("--keep-empty", action="store_true", help="경과·계획이 빈 항목도 유지")
-    ap.add_argument("--attach", action="store_true", help="원본 업무에 hwpx를 첨부한 댓글 등록")
+    ap.add_argument(
+        "--attach",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="원본 업무에 hwpx를 첨부한 댓글 등록 (기본 동작, 끄려면 --no-attach)",
+    )
     ap.add_argument("--comment", default=None, help="첨부 댓글 본문")
     ap.add_argument("--no-postprocess", action="store_true")
     args = ap.parse_args(argv)
+    explicit_attach = "--attach" in (argv if argv is not None else sys.argv[1:])
 
     project_id = post_id = None
     if args.from_json:
@@ -523,8 +529,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.attach:
         if not (project_id and post_id):
-            print("error: --attach 하려면 source.projectId / source.id가 필요하다.", file=sys.stderr)
-            return 2
+            message = "source.projectId / source.id 가 없어 첨부를 건너뛴다."
+            if explicit_attach:
+                print(f"error: {message}", file=sys.stderr)
+                return 2
+            print(f"warn: {message}", file=sys.stderr)
+            return 0
         file_id = dw.upload_file(project_id, post_id, output)
         text = args.comment or f"본문 기준으로 자동 생성한 「{doc['title']}」 초안을 첨부합니다."
         log_id = dw.create_comment(project_id, post_id, text, [file_id])
