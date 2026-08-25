@@ -155,6 +155,14 @@ def build_document(sections: list[dict], *, keep_empty: bool, exclude: list[str]
                             ],
                         }
                     )
+        # 표 없이 불릿만 적힌 섹션(예: 기타 업무일정)도 살린다.
+        for line in section.get("texts", []):
+            for text in cell_lines(line):
+                body = re.sub(r"^(ㅇ |\s*- )", "", text).strip()
+                if body:
+                    tasks.append({"name": "", "items": [{"subject": body, "owners": "",
+                                                         "progress": [], "plan": [],
+                                                         "text_only": True}]})
         if tasks:
             result.append({"title": title, "tasks": tasks})
     return result
@@ -347,13 +355,17 @@ class TemplateBuilder:
         for s_idx, section in enumerate(sections, 1):
             body.append(self.make_secbar(s_idx, section["title"]))
             body.append(copy.deepcopy(self.p_blank))
-            for t_idx, task in enumerate(section["tasks"], 1):
-                body.append(self.make_task(t_idx, task["name"]))
-                body.append(copy.deepcopy(self.p_blank))
+            counter = 0
+            for task in section["tasks"]:
+                if task["name"]:
+                    counter += 1
+                    body.append(self.make_task(counter, task["name"]))
+                    body.append(copy.deepcopy(self.p_blank))
                 for item in task["items"]:
                     if item["subject"]:
                         body.append(self.make_sub(item["subject"], item["owners"]))
-                    body.append(self.make_table(item["progress"], item["plan"]))
+                    if not item.get("text_only"):
+                        body.append(self.make_table(item["progress"], item["plan"]))
                     body.append(copy.deepcopy(self.p_blank))
             body.pop()
             if s_idx != len(sections):

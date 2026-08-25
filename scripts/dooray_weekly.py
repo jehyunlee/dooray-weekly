@@ -257,28 +257,38 @@ def normalize_rows(rows: list[list[str]]) -> tuple[list[str], list[list[str]]]:
 
 
 def parse_document(content: str) -> list[dict]:
-    """본문을 `[{title, tables: [{headers, rows}]}]` 구조로 분해한다."""
+    """본문을 `[{title, tables, texts}]` 구조로 분해한다.
+
+    `texts`는 표에 담기지 않은 본문 줄이다. 주간보고 섹션이 표 없이
+    불릿만으로 작성되는 경우가 있어 이것까지 잡아야 내용이 유실되지 않는다.
+    """
     parser = _TableParser()
     parser.feed(content)
     parser.close()
     sections: list[dict] = []
-    current = {"title": "", "tables": []}
+    current = {"title": "", "tables": [], "texts": []}
+
+    def flush() -> None:
+        if current["title"] or current["tables"] or current["texts"]:
+            sections.append(dict(current))
+
     for block in parser.blocks:
         if isinstance(block, str):
             for line in clean_cell(block).split("\n"):
-                heading = re.match(r"^#{1,3}\s*(.+?)\s*$", line)
-                if not heading:
+                if not line.strip():
                     continue
-                if current["title"] or current["tables"]:
-                    sections.append(current)
-                title = re.sub(r"^\d+\.\s*", "", heading.group(1)).strip()
-                current = {"title": title, "tables": []}
+                heading = re.match(r"^#{1,3}\s*(.+?)\s*$", line)
+                if heading:
+                    flush()
+                    title = re.sub(r"^\d+\.\s*", "", heading.group(1)).strip()
+                    current = {"title": title, "tables": [], "texts": []}
+                else:
+                    current["texts"].append(line)
         else:
             headers, rows = normalize_rows(block)
             if rows:
                 current["tables"].append({"headers": headers, "rows": rows})
-    if current["title"] or current["tables"]:
-        sections.append(current)
+    flush()
     return sections
 
 

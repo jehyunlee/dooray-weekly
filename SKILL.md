@@ -75,7 +75,8 @@ POST해야 한다. 그리고 `fileIdList`는 **문자열 배열**이다. `[{"id"
 Dooray 본문은 `mimeType: text/x-markdown`이지만 표는 raw `<table><tr><td>`이고,
 셀 안에 다시 마크다운(불릿, 체크박스, `\.` 이스케이프, `<br>`)이 섞인다.
 
-- `parse_document(content)` → `[{title, tables: [{headers, rows}]}]` 구조로 분해 (HWPX 생성기가 소비)
+- `parse_document(content)` → `[{title, tables, texts}]` 구조로 분해 (HWPX 생성기가 소비)
+- `texts`는 표 밖에 적힌 본문 줄이다. 섹션이 표 없이 불릿만으로 작성돼도 유실되지 않는다
 - `render_body(content)` → 사람이 읽는 마크다운
 - 연번/업무 칸이 `..` 인 연속 행은 직전 값을 승계한다.
 - `dooray://.../tasks/{id}` 링크는 `제목 (task {id})`로 치환한다.
@@ -136,6 +137,7 @@ python3 $S/weekly_hwpx.py --post <URL> --comment "초안 첨부합니다."
 
 - 셀 마크다운: 1단계 불릿 → `ㅇ `, 2단계 이상 → ` - `, `[x]` → 문장 끝 ` (완료)`, `※`/번호 줄은 앞에 공백 한 칸. 단일 줄이면 마커 없이 그대로.
 - 주요 경과와 향후 계획이 모두 빈 항목은 기본 제외(`--keep-empty`로 유지). 항목이 전부 빠진 업무·섹션도 사라진다.
+- 표 없이 불릿만 있는 섹션은 각 줄을 `□ {내용}` 문단으로 내보낸다(경과·계획 표 없음).
 - 표 행 높이는 셀 폭 기준으로 줄 수를 추정해 다시 계산하고, `hp:linesegarray` 캐시는 제거한다.
 - 표 `id`/`zOrder`를 문서 순서대로 재부여하고 `Preview/PrvText.txt`를 새 본문으로 갱신한다.
 
