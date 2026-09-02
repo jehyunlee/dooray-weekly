@@ -46,6 +46,13 @@ git clone https://github.com/jkf87/hwpx-skill.git ~/.gjc/agent/skills/hwpx
 
 ### 환경변수
 
+셸에 `export` 하거나, 저장소(스킬) 루트의 `.env` 파일에 적는다 (`.env.sample`을 복사해 채운다. `.env`는 git에 올라가지 않는다).
+셸 환경변수가 `.env`보다 우선한다. 현재 디렉토리의 `.env`는 읽지 않는다 (다른 위치의 파일을 쓰려면 `DOORAY_ENV_FILE=경로`).
+
+```bash
+cp .env.sample .env && chmod 600 .env && $EDITOR .env
+```
+
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
 | `DOORAY_API_KEY` | (필수) | Dooray → 설정 → API 에서 발급 |
@@ -83,6 +90,8 @@ python3 $S/dooray_weekly.py show <URL|id|'#2'>      # 특정 게시글
 python3 $S/dooray_weekly.py show --format raw       # 원본 본문
 python3 $S/dooray_weekly.py show --format json      # 전체 JSON
 python3 $S/dooray_weekly.py list                    # 게시글 목록
+python3 $S/dooray_weekly.py list --created thisweek # 이번 주 생성된 게시글 (today, prev-10d, A~B 도 가능)
+python3 $S/dooray_weekly.py show thisweek           # 이번 주 게시글이 1개면 바로, 여럿이면 후보 출력 후 rc=3
 python3 $S/dooray_weekly.py projects --query 주간   # 프로젝트 탐색
 ```
 
@@ -139,6 +148,7 @@ use_when:
   - 두레이 주간보고 작성해줘
   - 주간보고 만들어줘
   - 주간보고 읽어줘
+  - 이번주 두레이 주간보고 정리해줘
   - dooray weekly report write generate hwpx attach
 ```
 
@@ -153,6 +163,7 @@ use_when:
 - "주간보고 작성해줘/만들어줘" → `dooray-weekly` 스킬로 HWPX 생성
 - "주간보고 읽어줘" → 본문 조회
 - "주간보고 올려줘" → 생성 후 첨부 댓글 등록
+- "이번주 주간보고 정리해줘" → `list --created thisweek`로 업무를 찾고, 여럿이면 물어본 뒤 진행
 ```
 
 ## 문서 구조
